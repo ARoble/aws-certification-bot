@@ -41,6 +41,7 @@ export interface LessonState {
   step: LessonStep;
   quizState: LessonQuizState | null;
   masteryFailed: boolean;
+  awaitingQuestion?: boolean;
 }
 
 // Long-term progress

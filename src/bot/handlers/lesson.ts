@@ -13,6 +13,7 @@ import {
   generateExamTip,
   generateLessonQuiz,
   generateSimplifiedExplanation,
+  answerLessonQuestion,
 } from "../../services/course-ai";
 
 const composer = new Composer<BotContext>();
@@ -47,7 +48,10 @@ export async function startLesson(ctx: BotContext, lessonId: string): Promise<vo
   ctx.session.course.currentLessonId = lessonId;
 
   const header = formatLessonHeader(lessonId);
-  const keyboard = new InlineKeyboard().text("▶️ See Example", "lesson_continue");
+  const keyboard = new InlineKeyboard()
+    .text("▶️ See Example", "lesson_continue")
+    .row()
+    .text("❓ I have a question", "lesson_question");
 
   await ctx.reply(`${header}\n\n📖 Explanation:\n\n${explanation}`, {
     reply_markup: keyboard,
@@ -98,7 +102,10 @@ composer.callbackQuery("lesson_continue", async (ctx) => {
     const example = await generateLessonExample(lessonCtx.lesson, lessonCtx.domain);
     lesson.step = "example";
 
-    const keyboard = new InlineKeyboard().text("▶️ See Exam Tips", "lesson_continue");
+    const keyboard = new InlineKeyboard()
+      .text("▶️ See Exam Tips", "lesson_continue")
+      .row()
+      .text("❓ I have a question", "lesson_question");
     await ctx.reply(`${header}\n\n💡 Real-World Example:\n\n${example}`, {
       reply_markup: keyboard,
     });
@@ -107,7 +114,10 @@ composer.callbackQuery("lesson_continue", async (ctx) => {
     const tip = await generateExamTip(lessonCtx.lesson, lessonCtx.domain);
     lesson.step = "exam_tip";
 
-    const keyboard = new InlineKeyboard().text("🧪 Start Quiz", "lesson_start_quiz");
+    const keyboard = new InlineKeyboard()
+      .text("🧪 Start Quiz", "lesson_start_quiz")
+      .row()
+      .text("❓ I have a question", "lesson_question");
     await ctx.reply(`${header}\n\n⚠️ Exam Tips:\n\n${tip}`, {
       reply_markup: keyboard,
     });
@@ -339,6 +349,48 @@ composer.callbackQuery("lesson_back_to_course", async (ctx) => {
   }
 
   await ctx.reply(text, { reply_markup: keyboard });
+});
+
+// "I have a question" button — prompts user to type their question
+composer.callbackQuery("lesson_question", async (ctx) => {
+  await ctx.answerCallbackQuery();
+
+  const lesson = ctx.session.activeLesson;
+  if (!lesson) {
+    await ctx.reply("No active lesson. Use /learn to start.");
+    return;
+  }
+
+  lesson.awaitingQuestion = true;
+  await ctx.reply("What's your question about this topic? Type it below:");
+});
+
+// Handle typed question when awaiting
+composer.on("message:text", async (ctx, next) => {
+  const lesson = ctx.session.activeLesson;
+  if (!lesson?.awaitingQuestion) {
+    await next();
+    return;
+  }
+
+  lesson.awaitingQuestion = false;
+
+  const lessonCtx = getLessonContext(lesson.lessonId);
+  if (!lessonCtx) {
+    await ctx.reply("Lesson context not found. Use /learn to restart.");
+    return;
+  }
+
+  await ctx.reply("⏳ Looking up your answer...");
+
+  const answer = await answerLessonQuestion(
+    lessonCtx.lesson,
+    lessonCtx.domain,
+    ctx.message.text
+  );
+
+  const keyboard = new InlineKeyboard().text("▶️ Continue", "lesson_continue");
+  await ctx.reply(`💡 ${answer}`, { reply_markup: keyboard });
 });
 
 export default composer;

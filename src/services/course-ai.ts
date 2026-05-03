@@ -140,6 +140,32 @@ IMPORTANT: Do NOT use markdown in any field. Plain text only.`,
   return parsed.questions;
 }
 
+export async function answerLessonQuestion(
+  lesson: Lesson,
+  domain: Domain,
+  question: string
+): Promise<string> {
+  const skillsList = lesson.skills.map((s) => `- ${s}`).join("\n");
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      {
+        role: "system",
+        content: `You are an AWS instructor helping a student who is confused about a concept in a lesson.
+Answer their specific question clearly and concisely. Relate your answer back to the lesson topic.
+Under 200 words. Plain text only. No markdown formatting. No asterisks, no bold, no headers.`,
+      },
+      {
+        role: "user",
+        content: `Domain: ${domain.title}\nLesson: ${lesson.title}\n\nSkills being taught:\n${skillsList}\n\nStudent's question: ${question}`,
+      },
+    ],
+  });
+
+  return response.choices[0]?.message?.content || "Unable to generate an answer. Try rephrasing your question.";
+}
+
 export async function generateSimplifiedExplanation(
   lesson: Lesson,
   wrongTopics: string[]
