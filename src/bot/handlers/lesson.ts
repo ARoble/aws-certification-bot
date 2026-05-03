@@ -307,11 +307,10 @@ composer.callbackQuery("lesson_next", async (ctx) => {
   await startLesson(ctx, lessonId);
 });
 
-// Back to course overview
+// Back to course overview — compact summary
 composer.callbackQuery("lesson_back_to_course", async (ctx) => {
   await ctx.answerCallbackQuery();
 
-  // Trigger the /course command logic inline
   const { DVA_C02_COURSE } = await import("../../data/dva-c02-course");
   const { getTotalLessonCount } = await import("../../data/course-helpers");
 
@@ -320,19 +319,19 @@ composer.callbackQuery("lesson_back_to_course", async (ctx) => {
   const total = getTotalLessonCount();
   const pct = total > 0 ? Math.round((completed.length / total) * 100) : 0;
 
-  let text = `📚 AWS ${course.examCode} Course Outline\n`;
+  let text = `📚 AWS ${course.examCode} Course\n`;
   text += `Progress: ${completed.length}/${total} lessons (${pct}%)\n\n`;
 
   for (const domain of course.domains) {
-    text += `📘 Module ${domain.id}: ${domain.title} (${domain.weight}%)\n`;
-    for (const task of domain.tasks) {
-      for (const lesson of task.lessons) {
-        const check = completed.includes(lesson.id) ? "✅" : "⬜";
-        text += `  ${check} ${lesson.id} ${lesson.title}\n`;
-      }
-    }
-    text += "\n";
+    const domainLessons = domain.tasks.flatMap((t) => t.lessons);
+    const domainDone = domainLessons.filter((l) => completed.includes(l.id)).length;
+    const domainTotal = domainLessons.length;
+    const bar = domainDone === domainTotal ? "✅" : `${domainDone}/${domainTotal}`;
+    text += `📘 Module ${domain.id}: ${domain.title}\n`;
+    text += `   ${bar} lessons | ${domain.weight}% of exam\n\n`;
   }
+
+  text += "Use /module 1-4 to see lessons in each module.";
 
   const keyboard = new InlineKeyboard();
   if (completed.length < total) {

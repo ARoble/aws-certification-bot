@@ -16,19 +16,19 @@ composer.command("course", (ctx) => {
   const total = getTotalLessonCount();
   const pct = total > 0 ? Math.round((completed.length / total) * 100) : 0;
 
-  let text = `📚 AWS ${course.examCode} Course Outline\n`;
+  let text = `📚 AWS ${course.examCode} Course\n`;
   text += `Progress: ${completed.length}/${total} lessons (${pct}%)\n\n`;
 
   for (const domain of course.domains) {
-    text += `📘 Module ${domain.id}: ${domain.title} (${domain.weight}%)\n`;
-    for (const task of domain.tasks) {
-      for (const lesson of task.lessons) {
-        const check = completed.includes(lesson.id) ? "✅" : "⬜";
-        text += `  ${check} ${lesson.id} ${lesson.title}\n`;
-      }
-    }
-    text += "\n";
+    const domainLessons = domain.tasks.flatMap((t) => t.lessons);
+    const domainDone = domainLessons.filter((l) => completed.includes(l.id)).length;
+    const domainTotal = domainLessons.length;
+    const bar = domainDone === domainTotal ? "✅" : `${domainDone}/${domainTotal}`;
+    text += `📘 Module ${domain.id}: ${domain.title}\n`;
+    text += `   ${bar} lessons | ${domain.weight}% of exam\n\n`;
   }
+
+  text += "Use /module 1-4 to see lessons in each module.";
 
   const keyboard = new InlineKeyboard();
   if (completed.length === 0) {
@@ -39,10 +39,16 @@ composer.command("course", (ctx) => {
     keyboard.text("🔄 Review from Start", "course_start");
   }
 
+  keyboard.row();
+  keyboard.text("Module 1", "module_start_view_1");
+  keyboard.text("Module 2", "module_start_view_2");
+  keyboard.text("Module 3", "module_start_view_3");
+  keyboard.text("Module 4", "module_start_view_4");
+
   return ctx.reply(text, { reply_markup: keyboard });
 });
 
-composer.command("module", (ctx) => {
+composer.command("module", async (ctx) => {
   const arg = ctx.match?.trim();
   const domainId = parseInt(arg || "", 10);
 
@@ -50,30 +56,43 @@ composer.command("module", (ctx) => {
     return ctx.reply("Usage: /module 1 (or 2, 3, 4)\n\nModules:\n1 - Development with AWS Services\n2 - Security\n3 - Deployment\n4 - Troubleshooting and Optimization");
   }
 
+  await sendModuleView(ctx, domainId);
+});
+
+async function sendModuleView(ctx: BotContext, domainId: number) {
   const domain = getDomain(domainId);
-  if (!domain) return ctx.reply("Module not found.");
+  if (!domain) {
+    await ctx.reply("Module not found.");
+    return;
+  }
 
   const completed = ctx.session.course?.completedLessons || [];
 
-  let text = `📘 Module ${domain.id}: ${domain.title} (${domain.weight}%)\n\n`;
-
-  for (const task of domain.tasks) {
-    text += `${task.id} ${task.title}\n`;
-    for (const lesson of task.lessons) {
-      const check = completed.includes(lesson.id) ? "✅" : "⬜";
-      text += `  ${check} ${lesson.id} ${lesson.title}\n`;
-    }
-    text += "\n";
-  }
-
+  // Send each task as a separate message to stay under 4096 char limit
   const domainLessons = domain.tasks.flatMap((t) => t.lessons);
   const domainCompleted = domainLessons.filter((l) => completed.includes(l.id)).length;
-  text += `Progress: ${domainCompleted}/${domainLessons.length} lessons`;
+
+  let header = `📘 Module ${domain.id}: ${domain.title} (${domain.weight}%)\n`;
+  header += `Progress: ${domainCompleted}/${domainLessons.length} lessons\n`;
+
+  for (const task of domain.tasks) {
+    header += `\n${task.id} ${task.title}\n`;
+    for (const lesson of task.lessons) {
+      const check = completed.includes(lesson.id) ? "✅" : "⬜";
+      header += `  ${check} ${lesson.id} ${lesson.title}\n`;
+    }
+  }
 
   const keyboard = new InlineKeyboard();
   keyboard.text(`▶️ Start Module ${domainId}`, `module_start_${domainId}`);
 
-  return ctx.reply(text, { reply_markup: keyboard });
+  await ctx.reply(header, { reply_markup: keyboard });
+}
+
+composer.callbackQuery(/^module_start_view_(\d)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const domainId = parseInt(ctx.match[1], 10);
+  await sendModuleView(ctx, domainId);
 });
 
 composer.callbackQuery("course_start", async (ctx) => {
